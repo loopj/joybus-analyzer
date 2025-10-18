@@ -1,0 +1,13 @@
+{
+    "name": "Joybus HLA",
+    "apiVersion": "1.0.0",
+    "author": "James Smith",
+    "version": "1.0.0",
+    "description": "Decodes Joybus protocol data (N64, GameCube controllers) into human-readable transactions. The Joybus low-level analyzer must be installed separately, see README.md).",
+    "extensions": {
+        "Joybus HLA": {
+            "type": "HighLevelAnalyzer",
+            "entryPoint": "HighLevelAnalyzer.JoybusHla"
+        }
+    }
+}
