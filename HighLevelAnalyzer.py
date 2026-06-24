@@ -126,6 +126,75 @@ class N64AccessoryWrite(Transaction):
         }
 
 
+class N64EepromRead(Transaction):
+    command_id = 0x04
+    command_name = "n64_eeprom_read"
+
+    def command_data(self):
+        return {
+            "block": f"0x{self.command_args[0]:02X}",
+        }
+
+
+class N64EepromWrite(Transaction):
+    command_id = 0x05
+    command_name = "n64_eeprom_write"
+
+    def command_data(self):
+        return {
+            "block": f"0x{self.command_args[0]:02X}",
+        }
+
+    def response_data(self):
+        return {
+            "status": f"0x{self.response[0]:02X}",
+        }
+
+
+class N64RtcInfo(Transaction):
+    command_id = 0x06
+    command_name = "n64_rtc_info"
+
+    def response_data(self):
+        type = int.from_bytes(self.response[:2], "big")
+        status = self.response[2]
+
+        return {
+            "type": f"0x{type:04X}",
+            "status": f"0x{status:02X}",
+        }
+
+
+class N64RtcRead(Transaction):
+    command_id = 0x07
+    command_name = "n64_rtc_read"
+
+    def command_data(self):
+        return {
+            "block": f"0x{self.command_args[0]:02X}",
+        }
+
+    def response_data(self):
+        return {
+            "status": f"0x{self.response[8]:02X}",
+        }
+
+
+class N64RtcWrite(Transaction):
+    command_id = 0x08
+    command_name = "n64_rtc_write"
+
+    def command_data(self):
+        return {
+            "block": f"0x{self.command_args[0]:02X}",
+        }
+
+    def response_data(self):
+        return {
+            "status": f"0x{self.response[0]:02X}",
+        }
+
+
 class N64KeyboardRead(Transaction):
     command_id = 0x13
     command_name = "n64_keyboard_read"
