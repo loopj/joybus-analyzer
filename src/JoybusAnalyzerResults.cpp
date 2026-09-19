@@ -6,7 +6,6 @@
 #include "JoybusAnalyzerResults.h"
 #include "JoybusAnalyzer.h"
 #include "JoybusAnalyzerSettings.h"
-#include "JoybusProtocol.h"
 
 JoybusAnalyzerResults::JoybusAnalyzerResults( JoybusAnalyzer* analyzer, JoybusAnalyzerSettings* settings )
     : AnalyzerResults(), mSettings( settings ), mAnalyzer( analyzer )

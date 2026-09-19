@@ -498,24 +498,47 @@ class JoybusHla(HighLevelAnalyzer):
             data_type = frame.data["type"]
             data_byte = frame.data["data"][0]
 
+            # An opcode always starts a new transaction. Arguments only belong to one
+            # that has not stopped yet, and response bytes only to one that has, so
+            # bytes left over from a transaction the capture began in the middle of
+            # are dropped rather than folded into the transaction before them.
             if data_type == "command":
                 self.transaction = Transaction.create(data_byte)
                 self.transaction.command_start_time = frame.start_time
-            elif data_type == "argument" and self.transaction:
+            elif data_type == "argument":
+                if self.transaction is None or self.transaction.command_end_time is not None:
+                    self.transaction = None
+                    return None
                 self.transaction.command_args.append(data_byte)
-            elif data_type == "response" and self.transaction:
+            elif data_type == "response":
+                if self.transaction is None or self.transaction.command_end_time is None:
+                    self.transaction = None
+                    return None
                 if self.transaction.response_start_time is None:
                     self.transaction.response_start_time = frame.start_time
                 self.transaction.response.append(data_byte)
+            else:
+                return None
 
             self.transaction.last_byte_end_time = frame.end_time
 
+        # The stop bit says which end was driving the line, so a capture that starts
+        # part way through a transaction still lands its frames on the right side
         if frame.type == "stop" and self.transaction:
-            if self.transaction.command_end_time is None:
+            if frame.data["type"] == "host":
+                if self.transaction.command_end_time is not None:
+                    self.transaction = None
+                    return None
                 self.transaction.command_end_time = self.transaction.last_byte_end_time
                 new_frame = self.transaction.to_command_frame()
             else:
+                if self.transaction.command_end_time is None:
+                    self.transaction = None
+                    return None
                 self.transaction.response_end_time = self.transaction.last_byte_end_time
                 new_frame = self.transaction.to_response_frame()
+
+                # The transaction is complete, so nothing after it belongs here
+                self.transaction = None
 
         return new_frame
