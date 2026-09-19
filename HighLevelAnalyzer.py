@@ -382,6 +382,112 @@ class GCNKeyboardRead(Transaction):
     command_name = "gcn_keyboard_read"
 
 
+class MgmtIdentify(Transaction):
+    command_id = 0x60
+    command_name = "mgmt_identify"
+
+    def command_data(self):
+        magic = int.from_bytes(self.command_args[:2], "big")
+
+        return {
+            "magic": f"0x{magic:04X}",
+        }
+
+    def response_data(self):
+        magic = int.from_bytes(self.response[:2], "big")
+
+        return {
+            "magic": f"0x{magic:04X}",
+            "vendor": f"0x{self.response[2]:02X}",
+            "model": f"0x{self.response[3]:02X}",
+            "variant": f"0x{self.response[4]:02X}",
+            "version": f"{self.response[5]}.{self.response[6]}.{self.response[7]}",
+        }
+
+
+class MgmtCtrl(Transaction):
+    command_id = 0x61
+    command_name = "mgmt_ctrl"
+
+    def command_data(self):
+        return {
+            "group": f"0x{self.command_args[0]:02X}",
+            "verb": f"0x{self.command_args[1]:02X}",
+            "arg": f"0x{self.command_args[2]:02X}",
+        }
+
+    def response_data(self):
+        return {
+            "result": f"0x{self.response[0]:02X}",
+        }
+
+
+class MgmtStatus(Transaction):
+    command_id = 0x62
+    command_name = "mgmt_status"
+
+    def command_data(self):
+        return {
+            "group": f"0x{self.command_args[0]:02X}",
+        }
+
+    def response_data(self):
+        return {
+            "status": self.response.hex(" ").upper(),
+        }
+
+
+class MgmtConfigRead(Transaction):
+    command_id = 0x63
+    command_name = "mgmt_config_read"
+
+    def command_data(self):
+        return {
+            "group": f"0x{self.command_args[0]:02X}",
+            "block": f"0x{self.command_args[1]:02X}",
+        }
+
+    def response_data(self):
+        return {
+            "data": self.response.hex(" ").upper(),
+        }
+
+
+class MgmtConfigWrite(Transaction):
+    command_id = 0x64
+    command_name = "mgmt_config_write"
+
+    def command_data(self):
+        return {
+            "group": f"0x{self.command_args[0]:02X}",
+            "block": f"0x{self.command_args[1]:02X}",
+            "data": self.command_args[2:].hex(" ").upper(),
+        }
+
+    def response_data(self):
+        return {
+            "result": f"0x{self.response[0]:02X}",
+        }
+
+
+class MgmtDataWrite(Transaction):
+    command_id = 0x65
+    command_name = "mgmt_data_write"
+
+    def command_data(self):
+        address = int.from_bytes(self.command_args[1:3], "big")
+
+        return {
+            "group": f"0x{self.command_args[0]:02X}",
+            "address": f"0x{address:04X}",
+        }
+
+    def response_data(self):
+        return {
+            "checksum": f"0x{self.response[0]:02X}",
+        }
+
+
 class JoybusHla(HighLevelAnalyzer):
     transaction = None
 
