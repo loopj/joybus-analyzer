@@ -32,4 +32,4 @@ TabWidth: '4'
 UseTab: Never
 
 # custom flags
-AlignConsecutiveMacros: true
+AlignConsecutiveMacros: AcrossEmptyLinesAndComments

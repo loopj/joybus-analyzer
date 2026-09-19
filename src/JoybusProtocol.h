@@ -3,39 +3,39 @@
 #include <LogicPublicTypes.h>
 
 // Bus frequencies
-#define JOYBUS_FREQ_CONSOLE  200000
-#define JOYBUS_FREQ_GCC      250000
-#define JOYBUS_FREQ_WAVEBIRD 225000
+#define JOYBUS_FREQ_CONSOLE               200000
+#define JOYBUS_FREQ_GCC                   250000
+#define JOYBUS_FREQ_WAVEBIRD              225000
 
 // Bus timing constants
-#define JOYBUS_BUS_IDLE_NS      100000
-#define JOYBUS_REPLY_TIMEOUT_NS 100000
+#define JOYBUS_BUS_IDLE_NS                100000
+#define JOYBUS_REPLY_TIMEOUT_NS           100000
 
 // Maximum size of a Joybus transfer, in bytes
-#define JOYBUS_BLOCK_SIZE 64
+#define JOYBUS_BLOCK_SIZE                 64
 
 // Joybus command codes
-#define JOYBUS_CMD_RESET               0xFF
-#define JOYBUS_CMD_IDENTIFY            0x00
-#define JOYBUS_CMD_N64_READ            0x01
-#define JOYBUS_CMD_N64_ACCESSORY_READ  0x02
-#define JOYBUS_CMD_N64_ACCESSORY_WRITE 0x03
-#define JOYBUS_CMD_N64_EEPROM_READ     0x04
-#define JOYBUS_CMD_N64_EEPROM_WRITE    0x05
-#define JOYBUS_CMD_N64_RTC_INFO        0x06
-#define JOYBUS_CMD_N64_RTC_READ        0x07
-#define JOYBUS_CMD_N64_RTC_WRITE       0x08
-#define JOYBUS_CMD_N64_KEYBOARD_READ   0x13
-#define JOYBUS_CMD_GBA_READ            0x14
-#define JOYBUS_CMD_GBA_WRITE           0x15
-#define JOYBUS_CMD_PIXELFX_GAMEID      0x1D
-#define JOYBUS_CMD_GCN_READ            0x40
-#define JOYBUS_CMD_GCN_READ_ORIGIN     0x41
-#define JOYBUS_CMD_GCN_CALIBRATE       0x42
-#define JOYBUS_CMD_GCN_READ_LONG       0x43
-#define JOYBUS_CMD_GCN_PROBE_DEVICE    0x4D
-#define JOYBUS_CMD_GCN_FIX_DEVICE      0x4E
-#define JOYBUS_CMD_GCN_KEYBOARD_READ   0x54
+#define JOYBUS_CMD_RESET                  0xFF
+#define JOYBUS_CMD_IDENTIFY               0x00
+#define JOYBUS_CMD_N64_READ               0x01
+#define JOYBUS_CMD_N64_ACCESSORY_READ     0x02
+#define JOYBUS_CMD_N64_ACCESSORY_WRITE    0x03
+#define JOYBUS_CMD_N64_EEPROM_READ        0x04
+#define JOYBUS_CMD_N64_EEPROM_WRITE       0x05
+#define JOYBUS_CMD_N64_RTC_INFO           0x06
+#define JOYBUS_CMD_N64_RTC_READ           0x07
+#define JOYBUS_CMD_N64_RTC_WRITE          0x08
+#define JOYBUS_CMD_N64_KEYBOARD_READ      0x13
+#define JOYBUS_CMD_GBA_READ               0x14
+#define JOYBUS_CMD_GBA_WRITE              0x15
+#define JOYBUS_CMD_PIXELFX_GAMEID         0x1D
+#define JOYBUS_CMD_GCN_READ               0x40
+#define JOYBUS_CMD_GCN_READ_ORIGIN        0x41
+#define JOYBUS_CMD_GCN_CALIBRATE          0x42
+#define JOYBUS_CMD_GCN_READ_LONG          0x43
+#define JOYBUS_CMD_GCN_PROBE_DEVICE       0x4D
+#define JOYBUS_CMD_GCN_FIX_DEVICE         0x4E
+#define JOYBUS_CMD_GCN_KEYBOARD_READ      0x54
 
 // Joybus command transfer lengths
 #define JOYBUS_CMD_RESET_TX               1
@@ -80,6 +80,28 @@
 #define JOYBUS_CMD_GCN_FIX_DEVICE_RX      3
 #define JOYBUS_CMD_GCN_KEYBOARD_READ_TX   3
 #define JOYBUS_CMD_GCN_KEYBOARD_READ_RX   8
+
+// Joybus device management extension command codes
+#define JOYBUS_MGMT_CMD_IDENTIFY          0x60
+#define JOYBUS_MGMT_CMD_CTRL              0x61
+#define JOYBUS_MGMT_CMD_STATUS            0x62
+#define JOYBUS_MGMT_CMD_CONFIG_READ       0x63
+#define JOYBUS_MGMT_CMD_CONFIG_WRITE      0x64
+#define JOYBUS_MGMT_CMD_DATA_WRITE        0x65
+
+// Joybus device management extension transfer lengths
+#define JOYBUS_MGMT_CMD_IDENTIFY_TX       3
+#define JOYBUS_MGMT_CMD_IDENTIFY_RX       8
+#define JOYBUS_MGMT_CMD_CTRL_TX           4
+#define JOYBUS_MGMT_CMD_CTRL_RX           1
+#define JOYBUS_MGMT_CMD_STATUS_TX         2
+#define JOYBUS_MGMT_CMD_STATUS_RX         8
+#define JOYBUS_MGMT_CMD_CONFIG_READ_TX    3
+#define JOYBUS_MGMT_CMD_CONFIG_READ_RX    8
+#define JOYBUS_MGMT_CMD_CONFIG_WRITE_TX   11
+#define JOYBUS_MGMT_CMD_CONFIG_WRITE_RX   1
+#define JOYBUS_MGMT_CMD_DATA_WRITE_TX     36
+#define JOYBUS_MGMT_CMD_DATA_WRITE_RX     1
 
 namespace JoybusProtocol
 {
@@ -129,6 +151,18 @@ namespace JoybusProtocol
             return JOYBUS_CMD_GCN_FIX_DEVICE_TX;
         case JOYBUS_CMD_GCN_KEYBOARD_READ:
             return JOYBUS_CMD_GCN_KEYBOARD_READ_TX;
+        case JOYBUS_MGMT_CMD_IDENTIFY:
+            return JOYBUS_MGMT_CMD_IDENTIFY_TX;
+        case JOYBUS_MGMT_CMD_CTRL:
+            return JOYBUS_MGMT_CMD_CTRL_TX;
+        case JOYBUS_MGMT_CMD_STATUS:
+            return JOYBUS_MGMT_CMD_STATUS_TX;
+        case JOYBUS_MGMT_CMD_CONFIG_READ:
+            return JOYBUS_MGMT_CMD_CONFIG_READ_TX;
+        case JOYBUS_MGMT_CMD_CONFIG_WRITE:
+            return JOYBUS_MGMT_CMD_CONFIG_WRITE_TX;
+        case JOYBUS_MGMT_CMD_DATA_WRITE:
+            return JOYBUS_MGMT_CMD_DATA_WRITE_TX;
         default:
             return 0;
         }
@@ -180,6 +214,18 @@ namespace JoybusProtocol
             return JOYBUS_CMD_GCN_FIX_DEVICE_RX;
         case JOYBUS_CMD_GCN_KEYBOARD_READ:
             return JOYBUS_CMD_GCN_KEYBOARD_READ_RX;
+        case JOYBUS_MGMT_CMD_IDENTIFY:
+            return JOYBUS_MGMT_CMD_IDENTIFY_RX;
+        case JOYBUS_MGMT_CMD_CTRL:
+            return JOYBUS_MGMT_CMD_CTRL_RX;
+        case JOYBUS_MGMT_CMD_STATUS:
+            return JOYBUS_MGMT_CMD_STATUS_RX;
+        case JOYBUS_MGMT_CMD_CONFIG_READ:
+            return JOYBUS_MGMT_CMD_CONFIG_READ_RX;
+        case JOYBUS_MGMT_CMD_CONFIG_WRITE:
+            return JOYBUS_MGMT_CMD_CONFIG_WRITE_RX;
+        case JOYBUS_MGMT_CMD_DATA_WRITE:
+            return JOYBUS_MGMT_CMD_DATA_WRITE_RX;
         default:
             return 0;
         }
