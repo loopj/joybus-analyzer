@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <Analyzer.h>
 
 #include "JoybusAnalyzerSettings.h"
@@ -12,6 +14,24 @@ enum JoybusPhase
     JOYBUS_PHASE_COMMAND,
     JOYBUS_PHASE_ARGS,
     JOYBUS_PHASE_RESPONSE,
+};
+
+// Symbol kinds, told apart by how long the line is held low
+enum JoybusSymbolKind
+{
+    JOYBUS_SYMBOL_ONE,         // one quarter bit, a data one or a host stop bit
+    JOYBUS_SYMBOL_TARGET_STOP, // two quarter bits
+    JOYBUS_SYMBOL_ZERO,        // three quarter bits
+    JOYBUS_SYMBOL_INVALID,     // a low period no symbol accounts for
+};
+
+// The edges one symbol was measured from
+struct JoybusSymbol
+{
+    U64 fall;      // leading falling edge
+    U64 rise;      // rising edge ending the low period
+    U64 next_fall; // following falling edge, only valid when terminal is false
+    bool terminal; // nothing pulled the line low again, so the transmitter let go
 };
 
 class ANALYZER_EXPORT JoybusAnalyzer : public Analyzer2
@@ -43,9 +63,16 @@ class ANALYZER_EXPORT JoybusAnalyzer : public Analyzer2
 
     void AdvanceToBusIdle();
 
-    bool GetBit( BitState& bit_state );
-    bool GetStopBit();
-    bool GetByte( U8& byte );
+    JoybusSymbolKind ClassifySymbol( const JoybusSymbol& symbol, double bit_time );
+    void FitGrid( const std::vector<JoybusSymbol>& symbols, size_t first, size_t last, double& period, double& error );
+
+    bool GetSymbolRun( std::vector<JoybusSymbol>& symbols );
+    size_t FindStopBit( const std::vector<JoybusSymbol>& symbols );
+
+    void AddByteFrame( U8 byte, U64 start, U64 end );
+    void AddStopBitFrame( const JoybusSymbol& symbol, double bit_time );
+
+    void EmitTransmission( const std::vector<JoybusSymbol>& symbols, size_t first, size_t stop );
     void GetTransaction();
 
     const char* GetPhaseName();
