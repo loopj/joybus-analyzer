@@ -21,9 +21,25 @@ void JoybusAnalyzerResults::GenerateBubbleText( U64 frame_index, Channel& channe
     ClearResultStrings();
     Frame frame = GetFrame( frame_index );
 
+    const char* error_str = JoybusErrorName( ( JoybusError )frame.mData2 );
+
+    // An error frame stands in for symbols that never became a byte, so it carries the
+    // reason instead of a value
+    if( frame.mType == JOYBUS_PHASE_ERROR )
+    {
+        AddResultString( "!" );
+        AddResultString( "Error" );
+        AddResultString( "Error: ", error_str );
+        return;
+    }
+
     char bubble_str[ 128 ];
     AnalyzerHelpers::GetNumberString( frame.mData1, display_base, 8, bubble_str, 128 );
     AddResultString( bubble_str );
+
+    // A byte the decoder had to guess at keeps its value and says what was wrong with it
+    if( frame.mData2 != JOYBUS_ERROR_NONE )
+        AddResultString( bubble_str, " (", error_str, ")" );
 }
 
 void JoybusAnalyzerResults::GenerateExportFile( const char* file, DisplayBase display_base, U32 export_type_user_id )
@@ -33,7 +49,7 @@ void JoybusAnalyzerResults::GenerateExportFile( const char* file, DisplayBase di
     U64 trigger_sample = mAnalyzer->GetTriggerSample();
     U32 sample_rate = mAnalyzer->GetSampleRate();
 
-    file_stream << "Time [s],Value" << std::endl;
+    file_stream << "Time [s],Value,Error" << std::endl;
 
     U64 num_frames = GetNumFrames();
     for( U32 i = 0; i < num_frames; i++ )
@@ -46,7 +62,19 @@ void JoybusAnalyzerResults::GenerateExportFile( const char* file, DisplayBase di
         char number_str[ 128 ];
         AnalyzerHelpers::GetNumberString( frame.mData1, display_base, 8, number_str, 128 );
 
-        file_stream << time_str << "," << number_str << std::endl;
+        // An error frame has no value to report, only the reason it has none
+        if( frame.mType == JOYBUS_PHASE_ERROR )
+        {
+            file_stream << time_str << ",," << JoybusErrorName( ( JoybusError )frame.mData2 ) << std::endl;
+        }
+        else if( frame.mData2 != JOYBUS_ERROR_NONE )
+        {
+            file_stream << time_str << "," << number_str << "," << JoybusErrorName( ( JoybusError )frame.mData2 ) << std::endl;
+        }
+        else
+        {
+            file_stream << time_str << "," << number_str << "," << std::endl;
+        }
 
         if( UpdateExportProgressAndCheckForCancel( i, num_frames ) == true )
         {
@@ -64,9 +92,25 @@ void JoybusAnalyzerResults::GenerateFrameTabularText( U64 frame_index, DisplayBa
     Frame frame = GetFrame( frame_index );
     ClearTabularText();
 
+    const char* error_str = JoybusErrorName( ( JoybusError )frame.mData2 );
+
+    if( frame.mType == JOYBUS_PHASE_ERROR )
+    {
+        AddTabularText( "Error: ", error_str );
+        return;
+    }
+
     char number_str[ 128 ];
     AnalyzerHelpers::GetNumberString( frame.mData1, display_base, 8, number_str, 128 );
-    AddTabularText( number_str );
+
+    if( frame.mData2 != JOYBUS_ERROR_NONE )
+    {
+        AddTabularText( number_str, " (", error_str, ")" );
+    }
+    else
+    {
+        AddTabularText( number_str );
+    }
 #endif
 }
 

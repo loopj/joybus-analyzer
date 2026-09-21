@@ -125,7 +125,29 @@ void JoybusAnalyzer::FitGrid( const std::vector<JoybusSymbol>& symbols, size_t f
     error = sqrt( total / count );
 }
 
-bool JoybusAnalyzer::GetSymbolRun( std::vector<JoybusSymbol>& symbols )
+const char* JoybusErrorName( JoybusError error )
+{
+    switch( error )
+    {
+    case JOYBUS_ERROR_BIT_TIME:
+        return "bit time";
+    case JOYBUS_ERROR_RUN_LENGTH:
+        return "run length";
+    case JOYBUS_ERROR_FRAMING:
+        return "framing";
+    case JOYBUS_ERROR_SYMBOL:
+        return "symbol";
+    case JOYBUS_ERROR_MARGIN:
+        return "margin";
+    case JOYBUS_ERROR_STOP_BIT:
+        return "stop bit";
+    case JOYBUS_ERROR_NONE:
+    default:
+        return "none";
+    }
+}
+
+JoybusError JoybusAnalyzer::GetSymbolRun( std::vector<JoybusSymbol>& symbols )
 {
     symbols.clear();
 
@@ -150,10 +172,6 @@ bool JoybusAnalyzer::GetSymbolRun( std::vector<JoybusSymbol>& symbols )
             symbol.next_fall = mJoybus->GetSampleOfNextEdge();
 
             bit_time = symbol.next_fall - symbol.fall;
-
-            U64 bit_time_ns = SamplesToNs( bit_time );
-            if( bit_time_ns < BIT_TIME_MIN_NS || bit_time_ns > BIT_TIME_MAX_NS )
-                return false;
         }
         else
         {
@@ -166,11 +184,20 @@ bool JoybusAnalyzer::GetSymbolRun( std::vector<JoybusSymbol>& symbols )
 
         symbols.push_back( symbol );
 
+        // The symbol is kept either way so a run that fails here still has a span to
+        // report the failure over
+        if( symbols.size() == 1 )
+        {
+            U64 bit_time_ns = SamplesToNs( bit_time );
+            if( bit_time_ns < BIT_TIME_MIN_NS || bit_time_ns > BIT_TIME_MAX_NS )
+                return JOYBUS_ERROR_BIT_TIME;
+        }
+
         if( symbol.terminal )
-            return true;
+            return JOYBUS_ERROR_NONE;
 
         if( symbols.size() > MAX_RUN_SYMBOLS )
-            return false;
+            return JOYBUS_ERROR_RUN_LENGTH;
 
         // Move to the falling edge of the next symbol
         mJoybus->AdvanceToNextEdge();
@@ -223,20 +250,33 @@ size_t JoybusAnalyzer::FindStopBit( const std::vector<JoybusSymbol>& symbols )
     return best;
 }
 
-void JoybusAnalyzer::AddByteFrame( U8 byte, U64 start, U64 end )
+void JoybusAnalyzer::AddByteFrame( U8 byte, U64 start, U64 end, JoybusError error )
 {
+    // A bit no symbol accounts for is still read as the nearest one, so the byte holding
+    // it is marked rather than dropped. A bit that merely sits between two symbol widths
+    // is more likely to have been read right, so it only warns.
+    U8 flags = 0;
+    if( error == JOYBUS_ERROR_SYMBOL )
+        flags = DISPLAY_AS_ERROR_FLAG;
+    else if( error == JOYBUS_ERROR_MARGIN )
+        flags = DISPLAY_AS_WARNING_FLAG;
+
     // Add a bubble for the byte
     Frame frame;
     frame.mStartingSampleInclusive = start;
     frame.mEndingSampleInclusive = end;
     frame.mType = mCurrentPhase;
     frame.mData1 = byte;
+    frame.mData2 = error;
+    frame.mFlags = flags;
     mResults->AddFrame( frame );
 
     // Add a frame for the byte
     FrameV2 framev2;
     framev2.AddByte( "data", byte );
     framev2.AddString( "type", GetPhaseName() );
+    if( error != JOYBUS_ERROR_NONE )
+        framev2.AddString( "error", JoybusErrorName( error ) );
     mResults->AddFrameV2( framev2, "byte", start, end );
 
     mResults->CommitResults();
@@ -244,14 +284,52 @@ void JoybusAnalyzer::AddByteFrame( U8 byte, U64 start, U64 end )
 
 void JoybusAnalyzer::AddStopBitFrame( const JoybusSymbol& symbol, double bit_time )
 {
+    JoybusSymbolKind kind = ClassifySymbol( symbol, bit_time );
+
+    // A host holds a stop bit low for one quarter bit and a target for two, so anything
+    // wider than that came from neither
+    bool valid = kind == JOYBUS_SYMBOL_ONE || kind == JOYBUS_SYMBOL_TARGET_STOP;
+
     // Add a stop marker in the middle of low period
     U64 bit_mid = ( symbol.fall + symbol.rise ) / 2;
-    mResults->AddMarker( bit_mid, AnalyzerResults::Stop, mSettings.mDataChannel );
+    mResults->AddMarker( bit_mid, valid ? AnalyzerResults::Stop : AnalyzerResults::ErrorX, mSettings.mDataChannel );
 
     // Add a frame for the stop bit
     FrameV2 framev2;
-    framev2.AddString( "type", ClassifySymbol( symbol, bit_time ) == JOYBUS_SYMBOL_TARGET_STOP ? "target" : "host" );
+    framev2.AddString( "type", kind == JOYBUS_SYMBOL_TARGET_STOP ? "target" : "host" );
+    if( !valid )
+        framev2.AddString( "error", JoybusErrorName( JOYBUS_ERROR_STOP_BIT ) );
     mResults->AddFrameV2( framev2, "stop", symbol.fall, symbol.rise - 1 );
+
+    mResults->CommitResults();
+
+    // The stop bit has no bubble of its own, so a bad one needs a frame to show up in
+    if( !valid )
+        AddErrorFrame( JOYBUS_ERROR_STOP_BIT, symbol.fall, symbol.rise - 1 );
+}
+
+void JoybusAnalyzer::AddErrorFrame( JoybusError error, U64 start, U64 end )
+{
+    if( end <= start )
+        end = start + 1;
+
+    // Add a red bubble over everything the error covers
+    Frame frame;
+    frame.mStartingSampleInclusive = start;
+    frame.mEndingSampleInclusive = end;
+    frame.mType = JOYBUS_PHASE_ERROR;
+    frame.mData1 = 0;
+    frame.mData2 = error;
+    frame.mFlags = DISPLAY_AS_ERROR_FLAG;
+    mResults->AddFrame( frame );
+
+    // Mark the first sample too, which stays readable once the bubble is too narrow for text
+    mResults->AddMarker( start, AnalyzerResults::ErrorX, mSettings.mDataChannel );
+
+    // Add a frame so the high level analyzer sees the error as well
+    FrameV2 framev2;
+    framev2.AddString( "error", JoybusErrorName( error ) );
+    mResults->AddFrameV2( framev2, "error", start, end );
 
     mResults->CommitResults();
 }
@@ -271,22 +349,43 @@ void JoybusAnalyzer::EmitTransmission( const std::vector<JoybusSymbol>& symbols,
     U8 byte = 0;
     U8 bit_index = 0;
     U64 byte_start = symbols[ first ].fall;
+    JoybusError byte_error = JOYBUS_ERROR_NONE;
 
     for( size_t index = first; index < stop; index++ )
     {
         const JoybusSymbol& symbol = symbols[ index ];
-        bool is_one = ClassifySymbol( symbol, bit_time ) == JOYBUS_SYMBOL_ONE;
+        JoybusSymbolKind kind = ClassifySymbol( symbol, bit_time );
+        bool is_one = kind == JOYBUS_SYMBOL_ONE;
 
-        // Add a zero/one marker in the middle of the bit
+        // A data bit is only ever a one or a zero. Anything else is read as whichever it
+        // sits closest to, and the byte it lands in carries why.
+        if( kind == JOYBUS_SYMBOL_INVALID )
+            byte_error = JOYBUS_ERROR_SYMBOL;
+        else if( kind == JOYBUS_SYMBOL_TARGET_STOP && byte_error == JOYBUS_ERROR_NONE )
+            byte_error = JOYBUS_ERROR_MARGIN;
+
+        // Add a zero/one marker in the middle of the bit, or an error marker on a bit
+        // whose width says the reading cannot be trusted
         U64 bit_mid = ( symbol.fall + symbol.next_fall ) / 2;
-        mResults->AddMarker( bit_mid, is_one ? AnalyzerResults::One : AnalyzerResults::Zero, mSettings.mDataChannel );
+        if( kind == JOYBUS_SYMBOL_INVALID )
+        {
+            mResults->AddMarker( bit_mid, AnalyzerResults::ErrorX, mSettings.mDataChannel );
+        }
+        else if( kind == JOYBUS_SYMBOL_TARGET_STOP )
+        {
+            mResults->AddMarker( bit_mid, AnalyzerResults::ErrorSquare, mSettings.mDataChannel );
+        }
+        else
+        {
+            mResults->AddMarker( bit_mid, is_one ? AnalyzerResults::One : AnalyzerResults::Zero, mSettings.mDataChannel );
+        }
 
         // Bits arrive most significant first
         byte = ( byte << 1 ) | ( is_one ? 1 : 0 );
 
         if( ++bit_index == 8 )
         {
-            AddByteFrame( byte, byte_start, symbol.next_fall - 1 );
+            AddByteFrame( byte, byte_start, symbol.next_fall - 1, byte_error );
 
             // The first byte of a command is the opcode and the rest are its arguments
             if( mCurrentPhase == JOYBUS_PHASE_COMMAND )
@@ -294,6 +393,7 @@ void JoybusAnalyzer::EmitTransmission( const std::vector<JoybusSymbol>& symbols,
 
             byte = 0;
             bit_index = 0;
+            byte_error = JOYBUS_ERROR_NONE;
             byte_start = symbol.next_fall;
         }
     }
@@ -305,18 +405,28 @@ void JoybusAnalyzer::GetTransaction()
 {
     // Start at falling edge
     mJoybus->AdvanceToNextEdge();
+    U64 run_start = mJoybus->GetSampleNumber();
 
     std::vector<JoybusSymbol> symbols;
-    if( !GetSymbolRun( symbols ) )
+    JoybusError error = GetSymbolRun( symbols );
+
+    size_t stop = 0;
+    if( error == JOYBUS_ERROR_NONE )
     {
-        AdvanceToBusIdle();
-        return;
+        stop = FindStopBit( symbols );
+        if( stop == 0 )
+            error = JOYBUS_ERROR_FRAMING;
     }
 
-    size_t stop = FindStopBit( symbols );
-    if( stop == 0 )
+    // Nothing in the run could be read. What makes that the bus's fault rather than the
+    // capture's is the line going quiet and coming back afterwards, so the error waits
+    // on the next idle and a run the capture simply ended part way through never reports.
+    if( error != JOYBUS_ERROR_NONE )
     {
+        U64 run_end = symbols.empty() ? run_start : symbols.back().rise;
+
         AdvanceToBusIdle();
+        AddErrorFrame( error, run_start, run_end );
         return;
     }
 
@@ -337,6 +447,8 @@ const char* JoybusAnalyzer::GetPhaseName()
         return "argument";
     case JOYBUS_PHASE_RESPONSE:
         return "response";
+    case JOYBUS_PHASE_ERROR:
+        return "error";
     case JOYBUS_PHASE_IDLE:
     default:
         return "idle";

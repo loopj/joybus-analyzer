@@ -4,6 +4,7 @@ from saleae.analyzers import HighLevelAnalyzer, AnalyzerFrame
 class Transaction:
     command_id = None
     command_name = "unknown"
+    expects_response = True
     registry = {}
 
     def __init_subclass__(cls, **kwargs):
@@ -24,6 +25,8 @@ class Transaction:
         self.response_start_time = None
         self.response_end_time = None
         self.last_byte_end_time = None
+        self.command_stop_end_time = None
+        self.byte_errors = []
 
     def command_data(self):
         return {}
@@ -31,21 +34,56 @@ class Transaction:
     def response_data(self):
         return {}
 
+    # Runs an unpacker over a transfer that may have arrived short, in which case the
+    # transfer is reported as the error it is rather than raising out of the analyzer
+    def unpack(self, unpacker, what):
+        try:
+            data = unpacker()
+        except (IndexError, ValueError):
+            return None, f"truncated {self.command_name} {what}"
+
+        # Every byte the low level analyzer had to guess at rides along with the transfer
+        # that carried it, so the count starts again for the next one
+        if self.byte_errors:
+            data["error"] = ", ".join(self.byte_errors)
+
+        self.byte_errors = []
+
+        return data, None
+
     def to_command_frame(self):
+        data, error = self.unpack(self.command_data, "command")
+        if error is not None:
+            return error_frame(error, self.command_start_time, self.command_end_time)
+
         return AnalyzerFrame(
             type=f"{self.command_name}_tx",
             start_time=self.command_start_time,
             end_time=self.command_end_time,
-            data=self.command_data(),
+            data=data,
         )
 
     def to_response_frame(self):
+        data, error = self.unpack(self.response_data, "response")
+        if error is not None:
+            return error_frame(error, self.response_start_time, self.response_end_time)
+
         return AnalyzerFrame(
             type=f"{self.command_name}_rx",
             start_time=self.response_start_time,
             end_time=self.response_end_time,
-            data=self.response_data(),
+            data=data,
         )
+
+
+# One bad state, shown as its own frame so it stands out from the transfers around it
+def error_frame(reason, start_time, end_time):
+    return AnalyzerFrame(
+        type="error",
+        start_time=start_time,
+        end_time=end_time,
+        data={"error": reason},
+    )
 
 
 class Reset(Transaction):
@@ -213,6 +251,7 @@ class GBAWrite(Transaction):
 class PixelFXGameID(Transaction):
     command_id = 0x1D
     command_name = "pixelfx_game_id"
+    expects_response = False
 
 
 class GCNRead(Transaction):
@@ -491,8 +530,42 @@ class MgmtDataWrite(Transaction):
 class JoybusHla(HighLevelAnalyzer):
     transaction = None
 
+    result_types = {
+        "error": {"format": "Error: {{data.error}}"},
+    }
+
+    # A command is only known to have gone unanswered once something else turns up on
+    # the bus, so the check runs against whatever arrives next
+    def check_unanswered(self, end_time):
+        if self.transaction is None or self.transaction.command_end_time is None:
+            return None
+
+        if self.transaction.response:
+            return error_frame(
+                f"truncated {self.transaction.command_name} response",
+                self.transaction.response_start_time,
+                end_time,
+            )
+
+        if not self.transaction.expects_response:
+            return None
+
+        return error_frame(
+            f"{self.transaction.command_name} not answered",
+            self.transaction.command_stop_end_time,
+            end_time,
+        )
+
     def decode(self, frame: AnalyzerFrame):
-        new_frame = None
+        frames = []
+
+        # A run the low level analyzer could not read says nothing about what was in
+        # flight, so the transaction around it is abandoned rather than stitched across
+        if frame.type == "error":
+            frames.append(self.check_unanswered(frame.start_time))
+            frames.append(error_frame(frame.data["error"], frame.start_time, frame.end_time))
+            self.transaction = None
+            return [f for f in frames if f is not None]
 
         if frame.type == "byte":
             data_type = frame.data["type"]
@@ -503,6 +576,7 @@ class JoybusHla(HighLevelAnalyzer):
             # bytes left over from a transaction the capture began in the middle of
             # are dropped rather than folded into the transaction before them.
             if data_type == "command":
+                frames.append(self.check_unanswered(frame.start_time))
                 self.transaction = Transaction.create(data_byte)
                 self.transaction.command_start_time = frame.start_time
             elif data_type == "argument":
@@ -522,6 +596,10 @@ class JoybusHla(HighLevelAnalyzer):
 
             self.transaction.last_byte_end_time = frame.end_time
 
+            # A byte the low level analyzer had to guess at taints the transfer it lands in
+            if "error" in frame.data:
+                self.transaction.byte_errors.append(frame.data["error"])
+
         # The stop bit says which end was driving the line, so a capture that starts
         # part way through a transaction still lands its frames on the right side
         if frame.type == "stop" and self.transaction:
@@ -530,15 +608,32 @@ class JoybusHla(HighLevelAnalyzer):
                     self.transaction = None
                     return None
                 self.transaction.command_end_time = self.transaction.last_byte_end_time
-                new_frame = self.transaction.to_command_frame()
+                self.transaction.command_stop_end_time = frame.end_time
+                frames.append(self.transaction.to_command_frame())
             else:
                 if self.transaction.command_end_time is None:
                     self.transaction = None
                     return None
                 self.transaction.response_end_time = self.transaction.last_byte_end_time
-                new_frame = self.transaction.to_response_frame()
+
+                # A target that answers a command nothing should answer is as much a bad
+                # state as one that stays quiet when it should not
+                if self.transaction.expects_response:
+                    frames.append(self.transaction.to_response_frame())
+                else:
+                    frames.append(
+                        error_frame(
+                            f"{self.transaction.command_name} answered",
+                            self.transaction.response_start_time,
+                            self.transaction.response_end_time,
+                        )
+                    )
 
                 # The transaction is complete, so nothing after it belongs here
                 self.transaction = None
 
-        return new_frame
+        # A bad stop bit leaves the low level analyzer reporting both a stop and an error
+        if frame.type == "stop" and "error" in frame.data:
+            frames.append(error_frame(frame.data["error"], frame.start_time, frame.end_time))
+
+        return [f for f in frames if f is not None]

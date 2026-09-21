@@ -14,7 +14,23 @@ enum JoybusPhase
     JOYBUS_PHASE_COMMAND,
     JOYBUS_PHASE_ARGS,
     JOYBUS_PHASE_RESPONSE,
+    JOYBUS_PHASE_ERROR, // only ever a frame type, never a phase the decoder sits in
 };
+
+// Why the decoder could not read something
+enum JoybusError
+{
+    JOYBUS_ERROR_NONE,       // it read
+    JOYBUS_ERROR_BIT_TIME,   // the first two falling edges are not one bit time apart
+    JOYBUS_ERROR_RUN_LENGTH, // more symbols in one run than any transfer holds
+    JOYBUS_ERROR_FRAMING,    // no byte aligned stop bit anywhere in the run
+    JOYBUS_ERROR_SYMBOL,     // a data bit held low for longer than any symbol
+    JOYBUS_ERROR_MARGIN,     // a data bit held low between the one and zero widths
+    JOYBUS_ERROR_STOP_BIT,   // a stop bit too wide for either end to have sent it
+};
+
+// Name for one error, used in bubbles, exports and frames
+const char* JoybusErrorName( JoybusError error );
 
 // Symbol kinds, told apart by how long the line is held low
 enum JoybusSymbolKind
@@ -66,11 +82,12 @@ class ANALYZER_EXPORT JoybusAnalyzer : public Analyzer2
     JoybusSymbolKind ClassifySymbol( const JoybusSymbol& symbol, double bit_time );
     void FitGrid( const std::vector<JoybusSymbol>& symbols, size_t first, size_t last, double& period, double& error );
 
-    bool GetSymbolRun( std::vector<JoybusSymbol>& symbols );
+    JoybusError GetSymbolRun( std::vector<JoybusSymbol>& symbols );
     size_t FindStopBit( const std::vector<JoybusSymbol>& symbols );
 
-    void AddByteFrame( U8 byte, U64 start, U64 end );
+    void AddByteFrame( U8 byte, U64 start, U64 end, JoybusError error );
     void AddStopBitFrame( const JoybusSymbol& symbol, double bit_time );
+    void AddErrorFrame( JoybusError error, U64 start, U64 end );
 
     void EmitTransmission( const std::vector<JoybusSymbol>& symbols, size_t first, size_t stop );
     void GetTransaction();
