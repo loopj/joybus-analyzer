@@ -17,6 +17,8 @@ jobs:
       run: |
         cmake -B ${{github.workspace}}/build -A x64
         cmake --build ${{github.workspace}}/build --config Release
+    - name: Test
+      run: ctest --test-dir ${{github.workspace}}/build -C Release --output-on-failure
     - name: Upload windows build
       uses: actions/upload-artifact@v4
       with:
@@ -32,6 +34,8 @@ jobs:
         cmake --build ${{github.workspace}}/build/x86_64
         cmake -B ${{github.workspace}}/build/arm64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
         cmake --build ${{github.workspace}}/build/arm64
+    - name: Test
+      run: ctest --test-dir ${{github.workspace}}/build/arm64 --output-on-failure
     - name: Upload MacOS x86_64 build
       uses: actions/upload-artifact@v4
       with:
@@ -50,6 +54,8 @@ jobs:
       run: |
         cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release
         cmake --build ${{github.workspace}}/build
+    - name: Test
+      run: ctest --test-dir ${{github.workspace}}/build --output-on-failure
     - name: Upload Linux build
       uses: actions/upload-artifact@v4
       with:

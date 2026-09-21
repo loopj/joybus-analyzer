@@ -30,10 +30,7 @@ enable_testing()
 
 set(TEST_HARNESS_DIR ${analyzersdk_SOURCE_DIR}/testlib)
 
-add_executable(
-    JoybusAnalyzerTests
-    tests/TestJoybusAnalyzer.cpp
-    ${SOURCES}
+set(TEST_HARNESS_SOURCES
     ${TEST_HARNESS_DIR}/AnalyzerStubs.cpp
     ${TEST_HARNESS_DIR}/HelperStubs.cpp
     ${TEST_HARNESS_DIR}/MockChannelData.cpp
@@ -42,6 +39,26 @@ add_executable(
     ${TEST_HARNESS_DIR}/SettingsStubs.cpp
     ${TEST_HARNESS_DIR}/StreamHelpers.cpp
     ${TEST_HARNESS_DIR}/TestInstance.cpp
+)
+
+# Force <stdexcept> into the harness, SettingsStubs.cpp throws std::runtime_error
+# without including it and only libc++ pulls the header in on its own
+if(MSVC)
+    set(TEST_HARNESS_FORCE_INCLUDE /FIstdexcept)
+else()
+    set(TEST_HARNESS_FORCE_INCLUDE -include stdexcept)
+endif()
+
+set_source_files_properties(
+    ${TEST_HARNESS_SOURCES}
+    PROPERTIES COMPILE_OPTIONS "${TEST_HARNESS_FORCE_INCLUDE}"
+)
+
+add_executable(
+    JoybusAnalyzerTests
+    tests/TestJoybusAnalyzer.cpp
+    ${SOURCES}
+    ${TEST_HARNESS_SOURCES}
 )
 
 target_include_directories(
